@@ -4,3 +4,5 @@ pandas
 scikit-learn
 transformers
 torch
+openai
+google-genai
