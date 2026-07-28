@@ -34,8 +34,8 @@ FACE_SUBDIRECTORY = "Img"
 # Model
 PROVIDER = "openai"
 MODEL = "gpt-5-nano" 
-TEMPERATURE = 0.0
-TOP_P = 0.07
+TEMPERATURE = 1add ..0
+TOP_P = 1.0
 NUM_CTX = 4096  
 
 # Processing
