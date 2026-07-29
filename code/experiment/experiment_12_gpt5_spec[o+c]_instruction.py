@@ -1,4 +1,4 @@
-"""File 11-Gemini"""
+"""File 12"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from lab_pipeline.core import (
     setup_logging,
     write_reports,
 )
-from lab_pipeline.datasets import FaceImageDatasetAdapter
+from lab_pipeline.datasets import SpectrogramImageDatasetAdapter
 from lab_pipeline.providers import ProviderFactory
 
 # =============================================================================
@@ -28,15 +28,15 @@ from lab_pipeline.providers import ProviderFactory
 # Edit these values when changing the experiment.
 # =============================================================================
 
-FACE_SUBDIRECTORY = "Img"
-# SPECTROGRAM_SUBDIRECTORY = "Spectrogram" # face-only doesn't use spectrogram
+SPECTROGRAM_SUBDIRECTORY = "Spectrogram"
+# FACE_SUBDIRECTORY = "Img" # spectrogram-only doesn't use face images
 
 # Model
-PROVIDER = "gemini"
-MODEL = "gemini-3.6-flash" 
-TEMPERATURE = 0.0
-TOP_P = 0.7
-NUM_CTX = 4096  
+PROVIDER = "openai"
+MODEL = "gpt-5-nano" 
+TEMPERATURE = 1.0
+TOP_P = 1.0
+NUM_CTX = 4096
 
 # Processing
 NUM_RUNS = 3
@@ -51,7 +51,7 @@ RETRY_DELAY = 2.0
 # Dataset
 TEST_SIZE = 0.20
 SEED = 42
-MAX_SAMPLES = 3
+MAX_SAMPLES = 0
 
 # Output interpretation
 BERT_ENABLED = False
@@ -59,7 +59,7 @@ BERT_MODEL = "typeform/distilbert-base-uncased-mnli"
 BERT_THRESHOLD = 0.38
 BERT_MIN_MARGIN = 0.03
 
-# Dataset-pairing safety # comment because face-only doesn't require image pairing
+# Dataset-pairing safety # comment because spectrogram-only doesn't require image pairing
 # STRICT_PAIRS = False
 # ALLOW_POSITIONAL_FALLBACK = False
 
@@ -70,26 +70,31 @@ DRY_RUN = False
 
 LOGGER = logging.getLogger("slurm_experiment")
 
-SYSTEM_PROMPT = (
-    "You are an expert at classifying sentiment from facial expressions.\n"
-    "Output format: Respond with exactly one label: Positive, Negative, or "
-    "Neutral. Output the label only, no explanation, punctuation, or "
-    "additional text."
-)
+SYSTEM_PROMPT = """You are an expert at classifying sentiment from audio spectrograms.
+Instructions: Examine the spectrogram as a frequency-domain representation of the audio signal. Base your sentiment judgment only on visual acoustic patterns in the spectrogram, not on speech content or transcript information. Focus on the following features:
 
-USER_MESSAGE = (
-    "Classify the sentiment expressed in this face image."
-)
+* Energy level: Identify regions with high or low intensity in decibel scale. Higher overall energy or sudden energy changes may indicate stronger emotional expression, while lower and more stable energy may suggest neutral or calm content.
+* Dominant frequency range: Observe whether the main energy is concentrated in low, mid, or high frequencies. Higher-frequency dominance may be associated with sharper or more excited acoustic patterns, while lower-frequency dominance may indicate calmer or heavier tones.
+* Temporal variation: Examine how the energy changes over time. Rapid fluctuations, abrupt bursts, or irregular patterns may indicate stronger emotional variation, whereas smooth and stable patterns may suggest neutral sentiment.
+* Harmonic structure: Look for evenly spaced horizontal bands that indicate clear pitch or voiced sound. Strong and regular harmonic structures may reflect stable vocal expression, while weak, broken, or noisy structures may indicate tension, uncertainty, or negative affect.
+* High-frequency energy: Check whether energy is visible above approximately 10-15 kHz or mostly confined to lower frequencies. Extended high-frequency energy may indicate sharper, brighter, or more intense sound characteristics.
+* Spectral balance: Consider whether the spectrogram shows a balanced distribution of energy or whether it is concentrated in limited frequency regions. Use this information to support the final sentiment classification.
+
+After examining these features, classify the spectrogram into one of the following categories: Positive, Neutral, or Negative.
+Output format: Respond with exactly one label: Positive, Negative, or Neutral. Output the label only, no explanation, punctuation, or additional text."""
+
+USER_MESSAGE = "Classify the sentiment expressed in this spectrogram image."
+
 
 def resolve_dataset_paths() -> tuple[Path, Path]:
     dataset_root = Path(
         required_environment("DATASET_ROOT")
     ).expanduser().resolve()
 
-    face_dir = dataset_root / FACE_SUBDIRECTORY
-    # spectrogram_dir = dataset_root / SPECTROGRAM_SUBDIRECTORY
+    spectrogram_dir = dataset_root / SPECTROGRAM_SUBDIRECTORY
+    # face_dir = dataset_root / FACE_SUBDIRECTORY
 
-    return dataset_root, face_dir
+    return dataset_root, spectrogram_dir
 
 def required_environment(name: str) -> str:
     """Read an environment variable that Slurm must provide."""
@@ -125,14 +130,14 @@ def create_config() -> PipelineConfig:
 
     paths = RunPaths.from_run_dir(run_dir)
 
-    dataset_root, face_dir = resolve_dataset_paths()
+    dataset_root, spectrogram_dir = resolve_dataset_paths()
 
     resume = environment_bool("RESUME")
 
     immutable = {
-        "experiment": "11.gemini-face[o+c]-no-instruction",
+        "experiment": "12.gpt5-spec[o+c]-instruction",
         "dataset_root": str(dataset_root),
-        "face_dir": str(face_dir),
+        "spectrogram_dir": str(spectrogram_dir),
         "provider": PROVIDER,
         "model": MODEL,
         "temperature": TEMPERATURE,
@@ -150,7 +155,7 @@ def create_config() -> PipelineConfig:
     return PipelineConfig(
         paths=paths,
         run_id=paths.run_dir.name,
-        experiment_name="11.gemini-face[o+c]-no-instruction",
+        experiment_name="12.gpt5-spec[o+c]-instruction",
         provider=PROVIDER,
         model=MODEL,
         system_prompt=SYSTEM_PROMPT,
@@ -189,22 +194,22 @@ async def run() -> int:
     config.paths.create()
     setup_logging(config.paths.log_dir)
 
-    dataset_root, face_dir = resolve_dataset_paths()
+    dataset_root, spectrogram_dir = resolve_dataset_paths()
 
     if not dataset_root.is_dir():
         raise FileNotFoundError(
             f"Dataset directory not found: {dataset_root}"
         )
 
-    if not face_dir.is_dir():
+    if not spectrogram_dir.is_dir():
         raise FileNotFoundError(
-            f"Face directory not found: {face_dir}"
+            f"Spectrogram directory not found: {spectrogram_dir}"
         )
 
     metadata = RunMetadataRepository(config)
     metadata.start()
     try:
-        dataset = FaceImageDatasetAdapter(face_dir)
+        dataset = SpectrogramImageDatasetAdapter(spectrogram_dir)
 
         def build_jobs():
             all_jobs = dataset.build()
@@ -253,7 +258,7 @@ async def run() -> int:
             provider = ProviderFactory.create(
                 config.provider,
                 host=required_environment("MODEL_HOST"),
-                api_key=os.environ.get("GOOGLE_API_KEY"),
+                api_key=os.environ.get("OPENAI_API_KEY"),
                 model=config.model,
                 temperature=config.temperature,
                 top_p=config.top_p,
