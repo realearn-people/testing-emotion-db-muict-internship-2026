@@ -331,6 +331,8 @@ class GeminiVisionAdapter:
                     break
                 is_rate_limited = "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc)
                 if is_rate_limited:
+                    # Back off much longer for rate limits than for other
+                    # transient errors, with exponential growth + jitter.
                     delay = self._retry_delay_s * (5 ** (attempt + 1))
                 else:
                     delay = self._retry_delay_s * (attempt + 1)

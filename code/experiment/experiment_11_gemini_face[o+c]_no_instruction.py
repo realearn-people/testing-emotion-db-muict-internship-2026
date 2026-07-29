@@ -27,7 +27,7 @@ from lab_pipeline.providers import ProviderFactory
 # EXPERIMENT CONFIGURATION
 # Edit these values when changing the experiment.
 # =============================================================================
-
+   
 FACE_SUBDIRECTORY = "Img"
 # SPECTROGRAM_SUBDIRECTORY = "Spectrogram" # face-only doesn't use spectrogram
 
@@ -36,16 +36,17 @@ PROVIDER = "gemini"
 MODEL = "gemini-3.5-flash-lite" 
 TEMPERATURE = 0.0
 TOP_P = 0.7
+THINKING_LEVEL = "minimal"  
 NUM_CTX = 4096  
 
 # Processing
 NUM_RUNS = 3
-NUM_WORKERS = 3
-MAX_CONCURRENCY = 3
+NUM_WORKERS = 60
+MAX_CONCURRENCY = 60
 
 # Retry
 REQUEST_TIMEOUT = 180.0
-REQUEST_RETRIES = 2
+REQUEST_RETRIES = 4
 RETRY_DELAY = 2.0
 
 # Dataset
@@ -137,6 +138,7 @@ def create_config() -> PipelineConfig:
         "model": MODEL,
         "temperature": TEMPERATURE,
         "top_p": TOP_P,
+        "thinking_level": THINKING_LEVEL,
         "num_ctx": NUM_CTX,
         "num_runs": NUM_RUNS,
         "test_size": TEST_SIZE,
@@ -262,6 +264,7 @@ async def run() -> int:
                 retries=config.request_retries,
                 retry_delay_s=config.retry_delay_s,
                 semaphore=semaphore,
+                thinking_level=THINKING_LEVEL,
             )
             queue = RedisJobQueue(config)
             interpreter = OutputInterpreter(
