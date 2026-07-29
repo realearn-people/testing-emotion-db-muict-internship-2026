@@ -1,4 +1,4 @@
-"""File 9-ChatGPT"""
+"""File 11-Gemini"""
 
 from __future__ import annotations
 
@@ -32,10 +32,10 @@ FACE_SUBDIRECTORY = "Img"
 # SPECTROGRAM_SUBDIRECTORY = "Spectrogram" # face-only doesn't use spectrogram
 
 # Model
-PROVIDER = "openai"
-MODEL = "gpt-5-nano" 
-TEMPERATURE = 1.0
-TOP_P = 1.0
+PROVIDER = "gemini"
+MODEL = "gemini-2.0-flash" 
+TEMPERATURE = 0.0
+TOP_P = 0.7
 NUM_CTX = 4096  
 
 # Processing
@@ -130,7 +130,7 @@ def create_config() -> PipelineConfig:
     resume = environment_bool("RESUME")
 
     immutable = {
-        "experiment": "9.gpt5-face[o+c]-no-instruction",
+        "experiment": "11.gemini-face[o+c]-no-instruction",
         "dataset_root": str(dataset_root),
         "face_dir": str(face_dir),
         "provider": PROVIDER,
@@ -150,7 +150,7 @@ def create_config() -> PipelineConfig:
     return PipelineConfig(
         paths=paths,
         run_id=paths.run_dir.name,
-        experiment_name="9.gpt5-face[o+c]-no-instruction",
+        experiment_name="11.gemini-face[o+c]-no-instruction",
         provider=PROVIDER,
         model=MODEL,
         system_prompt=SYSTEM_PROMPT,
@@ -253,7 +253,7 @@ async def run() -> int:
             provider = ProviderFactory.create(
                 config.provider,
                 host=required_environment("MODEL_HOST"),
-                api_key=os.environ.get("OPENAI_API_KEY"),
+                api_key=os.environ.get("GOOGLE_API_KEY"),
                 model=config.model,
                 temperature=config.temperature,
                 top_p=config.top_p,
