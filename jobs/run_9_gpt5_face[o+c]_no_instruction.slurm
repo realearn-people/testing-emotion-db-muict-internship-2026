@@ -40,10 +40,6 @@ PROJECT_DATA_ROOT="$USER_DATA_ROOT/$PROJECT_NAME"
 DATASET_ROOT="$PROJECT_DATA_ROOT/dataset/$DATASET_NAME"
 RUN_ROOT="$PROJECT_DATA_ROOT/slurm-runs"
 
-# Activate conda environment
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate emotion-recognition
-
 PYTHON="$(which python)"
 PROGRAM="$CODE_ROOT/code/experiment/experiment_9_gpt5_face[o+c]_no_instruction.py"
 

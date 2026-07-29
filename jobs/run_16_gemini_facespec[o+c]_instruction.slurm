@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp10-gpt5-face[o+c]-instruction
+#SBATCH --job-name=exp16-gemini-facespec[o+c]-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -41,7 +41,7 @@ DATASET_ROOT="$PROJECT_DATA_ROOT/dataset/$DATASET_NAME"
 RUN_ROOT="$PROJECT_DATA_ROOT/slurm-runs"
 
 PYTHON="$(which python)"
-PROGRAM="$CODE_ROOT/code/experiment/experiment_10_gpt5_face[o+c]_instruction.py"
+PROGRAM="$CODE_ROOT/code/experiment/experiment_16_gemini_facespec[o+c]_instruction.py"
 
 # =============================================================================
 # SMALL VALIDATION HELPERS
