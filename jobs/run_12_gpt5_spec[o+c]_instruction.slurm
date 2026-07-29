@@ -153,7 +153,6 @@ PY
 
 # =============================================================================
 # READ MODEL SETTINGS FROM PYTHON
-# The model and provider are configured only in experiment_9_gpt5_face[o+c]_no_instruction.py
 # =============================================================================
 
 read_python_constant() {

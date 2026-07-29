@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp9-gpt5-face[o+c]-no-instruction
+#SBATCH --job-name=exp15-gemini-spec[o+c]-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -45,7 +45,7 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate emotion-recognition
 
 PYTHON="$(which python)"
-PROGRAM="$CODE_ROOT/code/experiment/experiment_9_gpt5_face[o+c]_no_instruction.py"
+PROGRAM="$CODE_ROOT/code/experiment/experiment_15_gemini_spec[o+c]_instruction.py"
 
 # =============================================================================
 # SMALL VALIDATION HELPERS
