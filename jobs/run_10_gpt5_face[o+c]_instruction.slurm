@@ -212,7 +212,7 @@ if [[ "$PROVIDER" == "openai" ]]; then
     echo "PASS: OpenAI credentials present"
 
 elif [[ "$PROVIDER" == "gemini" ]]; then
-    MODEL_HOST="${MODEL_HOST:-}"
+    MODEL_HOST="${MODEL_HOST:-https://generativelanguage.googleapis.com}"
     export MODEL_HOST
 
     GOOGLE_API_KEY="${GOOGLE_API_KEY:?GOOGLE_API_KEY is required for provider $PROVIDER. Set it in your shell/profile before running sbatch, do not hardcode it here.}"

@@ -1,4 +1,4 @@
-"""File 12"""
+"""File 12-ChatGpt"""
 
 from __future__ import annotations
 
@@ -40,12 +40,12 @@ NUM_CTX = 4096
 
 # Processing
 NUM_RUNS = 3
-NUM_WORKERS = 3
-MAX_CONCURRENCY = 3
+NUM_WORKERS = 80
+MAX_CONCURRENCY = 80
 
 # Retry
 REQUEST_TIMEOUT = 180.0
-REQUEST_RETRIES = 2
+REQUEST_RETRIES = 4
 RETRY_DELAY = 2.0
 
 # Dataset
