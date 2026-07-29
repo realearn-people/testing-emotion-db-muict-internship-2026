@@ -33,7 +33,7 @@ FACE_SUBDIRECTORY = "Img"
 
 # Model
 PROVIDER = "gemini"
-MODEL = "gemini-2.5-flash-lite" 
+MODEL = "gemini-2.5-flash" 
 TEMPERATURE = 0.0
 TOP_P = 0.7
 NUM_CTX = 4096  
