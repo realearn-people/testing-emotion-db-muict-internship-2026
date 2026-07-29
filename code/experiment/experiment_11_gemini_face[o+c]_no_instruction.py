@@ -33,7 +33,7 @@ FACE_SUBDIRECTORY = "Img"
 
 # Model
 PROVIDER = "gemini"
-MODEL = "gemini-2.0-flash" 
+MODEL = "gemini-2.5-flash-lite" 
 TEMPERATURE = 0.0
 TOP_P = 0.7
 NUM_CTX = 4096  
@@ -51,7 +51,7 @@ RETRY_DELAY = 2.0
 # Dataset
 TEST_SIZE = 0.20
 SEED = 42
-MAX_SAMPLES = 0
+MAX_SAMPLES = 3
 
 # Output interpretation
 BERT_ENABLED = False
