@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp8-face-spectrogram-open-mouth
+#SBATCH --job-name=exp5-face[o+c]-no-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -42,7 +42,7 @@ DATASET_ROOT="$PROJECT_DATA_ROOT/dataset/$DATASET_NAME"
 RUN_ROOT="$PROJECT_DATA_ROOT/slurm-runs"
 
 PYTHON="$(which python)"
-PROGRAM="$CODE_ROOT/code/experiment/experiment_8_face_spectrogram_open_mouth.py"
+PROGRAM="$CODE_ROOT/code/experiment/experiment_5_face[o]_no_instruction.py"
 
 PROGRAM_BASENAME="$(basename "$PROGRAM" .py)"
 DEST_LABEL="${DEST_LABEL:-results-$(echo "$PROGRAM_BASENAME" | sed -E 's/^experiment_[0-9]+_//')}"
@@ -153,7 +153,7 @@ PY
 
 # =============================================================================
 # READ MODEL SETTINGS FROM PYTHON
-# The model and provider are configured only in experiment_8_face_spectrogram_open_mouth.py.
+# The model and provider are configured only in experiment_5_face_only.py.
 # =============================================================================
 
 read_python_constant() {
