@@ -43,6 +43,9 @@ RUN_ROOT="$PROJECT_DATA_ROOT/slurm-runs"
 PYTHON="$(which python)"
 PROGRAM="$CODE_ROOT/code/experiment/experiment_9_gpt5_face[o+c]_no_instruction.py"
 
+PROGRAM_BASENAME="$(basename "$PROGRAM" .py)"
+DEST_LABEL="${DEST_LABEL:-results-$(echo "$PROGRAM_BASENAME" | sed -E 's/^experiment_[0-9]+_//')}"
+
 # =============================================================================
 # SMALL VALIDATION HELPERS
 # =============================================================================
@@ -227,4 +230,22 @@ fi
 # Allow Python to find project-01/lab_pipeline
 export PYTHONPATH="$CODE_ROOT/code${PYTHONPATH:+:$PYTHONPATH}"
 
+set +e
 srun --unbuffered "$PYTHON" "$PROGRAM"
+EXIT_CODE=$?
+set -e
+
+# =============================================================================
+# COPY COMPLETED RUN TO complete-runs/<experiment-label>/
+# =============================================================================
+
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+    COMPLETE_ROOT="$PROJECT_DATA_ROOT/complete-runs/$DEST_LABEL"
+    mkdir -p "$COMPLETE_ROOT"
+    cp -r "$RUN_DIR" "$COMPLETE_ROOT/"
+    echo "PASS: copied completed run to $COMPLETE_ROOT/$(basename "$RUN_DIR")"
+else
+    echo "SKIP: run did not complete cleanly (exit code $EXIT_CODE) -- not copying"
+fi
+
+exit "$EXIT_CODE"
