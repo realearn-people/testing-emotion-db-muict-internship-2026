@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp7-spec[o+c]-instruction
+#SBATCH --job-name=exp7-spec[o]-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

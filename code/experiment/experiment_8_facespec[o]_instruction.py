@@ -143,7 +143,7 @@ def create_config() -> PipelineConfig:
     resume = environment_bool("RESUME")
 
     immutable = {
-        "experiment": "8.0-face-spectrogram-open-mouth",
+        "experiment": "8.facespec[o]_instruction",
         "face_dir": str(face_dir),
         "spectrogram_dir": str(spectrogram_dir),
         "provider": PROVIDER,
@@ -163,7 +163,7 @@ def create_config() -> PipelineConfig:
     return PipelineConfig(
         paths=paths,
         run_id=paths.run_dir.name,
-        experiment_name="8.0-face-spectrogram-open-mouth",
+        experiment_name="8.facespec[o]_instruction",
         provider=PROVIDER,
         model=MODEL,
         system_prompt=SYSTEM_PROMPT,

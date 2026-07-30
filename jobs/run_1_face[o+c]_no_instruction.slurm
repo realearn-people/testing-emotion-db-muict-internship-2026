@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp6-face[o]-instruction
+#SBATCH --job-name=exp1-face[o+c]-no-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -26,7 +26,7 @@ USER_NAME="${USER_NAME:-soongswang-kornkanok}"
 PROJECT_NAME="${PROJECT_NAME:-project-01}"
 
 # Selected dataset folder under /data1/workspace/students/<user-name>/
-DATASET_NAME="${DATASET_NAME:-silver_dataset_open_mouth}"
+DATASET_NAME="${DATASET_NAME:-P3-V1-Ravdess}"
 
 # =============================================================================
 # AUTOMATIC PATHS
@@ -42,7 +42,7 @@ DATASET_ROOT="$PROJECT_DATA_ROOT/dataset/$DATASET_NAME"
 RUN_ROOT="$PROJECT_DATA_ROOT/slurm-runs"
 
 PYTHON="$(which python)"
-PROGRAM="$CODE_ROOT/code/experiment/experiment_6_face[o]_instruction.py"
+PROGRAM="$CODE_ROOT/code/experiment/experiment_1_face[o+c]_no_instruction.py"
 
 PROGRAM_BASENAME="$(basename "$PROGRAM" .py)"
 DEST_LABEL="${DEST_LABEL:-results-$(echo "$PROGRAM_BASENAME" | sed -E 's/^experiment_[0-9]+_//')}"

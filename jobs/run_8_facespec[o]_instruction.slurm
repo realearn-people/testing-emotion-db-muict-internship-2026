@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp8-face-spectrogram-open-mouth
+#SBATCH --job-name=exp8-facespec[o]-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

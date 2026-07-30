@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp5-face[o+c]-no-instruction
+#SBATCH --job-name=exp5-face[o]-no-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -153,7 +153,6 @@ PY
 
 # =============================================================================
 # READ MODEL SETTINGS FROM PYTHON
-# The model and provider are configured only in experiment_5_face_only.py.
 # =============================================================================
 
 read_python_constant() {

@@ -134,7 +134,7 @@ def create_config() -> PipelineConfig:
     resume = environment_bool("RESUME")
 
     immutable = {
-        "experiment": "5.0-face-only-open-mouth",
+        "experiment": "6.face[o]_instruction",
         "dataset_root": str(dataset_root),
         "face_dir": str(face_dir),
         "provider": PROVIDER,
@@ -154,7 +154,7 @@ def create_config() -> PipelineConfig:
     return PipelineConfig(
         paths=paths,
         run_id=paths.run_dir.name,
-        experiment_name="5.0-face-only-open-mouth",
+        experiment_name="6.face[o]_instruction",
         provider=PROVIDER,
         model=MODEL,
         system_prompt=system_prompt,

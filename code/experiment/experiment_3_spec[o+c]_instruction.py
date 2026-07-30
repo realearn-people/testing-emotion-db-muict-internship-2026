@@ -1,4 +1,4 @@
-"""File 7"""
+"""File 3"""
 
 from __future__ import annotations
 
@@ -135,7 +135,7 @@ def create_config() -> PipelineConfig:
     resume = environment_bool("RESUME")
 
     immutable = {
-        "experiment": "7.spec[o]_instruction",
+        "experiment": "3.spec[o+c]_instruction",
         "dataset_root": str(dataset_root),
         "spectrogram_dir": str(spectrogram_dir),
         "provider": PROVIDER,
@@ -155,7 +155,7 @@ def create_config() -> PipelineConfig:
     return PipelineConfig(
         paths=paths,
         run_id=paths.run_dir.name,
-        experiment_name="7.spec[o]_instruction",
+        experiment_name="3.spec[o+c]_instruction",
         provider=PROVIDER,
         model=MODEL,
         system_prompt=SYSTEM_PROMPT,
