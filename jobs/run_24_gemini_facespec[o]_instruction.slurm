@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=exp20-gpt5-facespec[o]-instruction
+#SBATCH --job-name=exp24-gemini-facespec[o]-instruction
 #SBATCH --partition=all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -41,7 +41,7 @@ DATASET_ROOT="$PROJECT_DATA_ROOT/dataset/$DATASET_NAME"
 RUN_ROOT="$PROJECT_DATA_ROOT/slurm-runs"
 
 PYTHON="$(which python)"
-PROGRAM="$CODE_ROOT/code/experiment/experiment_20_gpt5_facespec[o]_instruction.py"
+PROGRAM="$CODE_ROOT/code/experiment/experiment_24_gemini_facespec[o]_instruction.py"
 
 PROGRAM_BASENAME="$(basename "$PROGRAM" .py)"
 DEST_LABEL="${DEST_LABEL:-results-$(echo "$PROGRAM_BASENAME" | sed -E 's/^experiment_[0-9]+_//')}"
