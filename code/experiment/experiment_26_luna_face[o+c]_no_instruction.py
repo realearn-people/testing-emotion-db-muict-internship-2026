@@ -52,7 +52,7 @@ RETRY_DELAY = 2.0
 # Dataset
 TEST_SIZE = 0.20
 SEED = 42
-MAX_SAMPLES = 3
+MAX_SAMPLES = 0
 
 # Output interpretation
 BERT_ENABLED = False
