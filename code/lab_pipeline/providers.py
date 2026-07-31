@@ -138,6 +138,7 @@ class OpenAIVisionAdapter:
         retries: int,
         retry_delay_s: float,
         semaphore: asyncio.Semaphore,
+        reasoning_effort: str | None = None,
     ) -> None:
         try:
             from openai import AsyncOpenAI
@@ -160,6 +161,7 @@ class OpenAIVisionAdapter:
         self._retries = retries
         self._retry_delay_s = retry_delay_s
         self._semaphore = semaphore
+        self._reasoning_effort = reasoning_effort
 
     @staticmethod
     def _encode_image_data_uri(path: Path) -> str:
@@ -200,11 +202,16 @@ class OpenAIVisionAdapter:
             try:
                 async with self._semaphore:
                     started = time.perf_counter()
+                    request_kwargs = {
+                        "model": self._model,
+                        "messages": messages,
+                        "temperature": self._temperature,
+                        "top_p": self._top_p,
+                    }
+                    if self._reasoning_effort is not None:
+                        request_kwargs["reasoning_effort"] = self._reasoning_effort
                     response = await self._client.chat.completions.create(
-                        model=self._model,
-                        messages=messages,
-                        temperature=self._temperature,
-                        top_p=self._top_p,
+                        **request_kwargs
                     )
                     elapsed_ms = (time.perf_counter() - started) * 1000
                 return ProviderResponse(
@@ -357,6 +364,7 @@ class ProviderFactory:
         semaphore: asyncio.Semaphore,
         api_key: str | None = None,
         thinking_level: str = "minimal",
+        reasoning_effort: str | None = None,
     ) -> ModelProvider:
         name = provider.strip().lower()
         if name == "ollama":
@@ -383,6 +391,7 @@ class ProviderFactory:
                 retries=retries,
                 retry_delay_s=retry_delay_s,
                 semaphore=semaphore,
+                reasoning_effort=reasoning_effort,
             )
         if name == "gemini":
             return GeminiVisionAdapter(
