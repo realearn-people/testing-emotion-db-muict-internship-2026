@@ -1,4 +1,4 @@
-"""File 22-Gemini"""
+"""File 22-Gemini 3.5 Flash-Lite"""
 
 from __future__ import annotations
 

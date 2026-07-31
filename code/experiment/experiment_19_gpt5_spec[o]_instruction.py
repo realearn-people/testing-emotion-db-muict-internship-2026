@@ -1,4 +1,4 @@
-"""File 19-ChatGpt"""
+"""File 19-ChatGPT-5-nano"""
 
 from __future__ import annotations
 
