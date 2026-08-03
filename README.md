@@ -1,208 +1,248 @@
-# File 4 reusable Slurm experiment
+# test-emotion-recognition-slurm
 
-This project converts File 4 into a reusable Python pipeline that runs through Slurm.
+Multimodal (face + spectrogram) emotion sentiment classification using vision-language models, run as Slurm jobs on a shared GPU cluster. Supports three model providers — a local Ollama server, OpenAI, and Google Gemini — behind a single, reusable pipeline.
 
-## Server layout
+Each experiment classifies images (face-only, spectrogram-only, or paired face+spectrogram) into **Positive / Negative / Neutral**, using zero-shot prompting, with checkpointed/resumable execution and automatic CSV/JSON reporting.
 
-The active code and Python environment are stored under:
+> This README was verified directly against the repository contents (`git clone` + inspection) as of the latest commit, rather than written from memory of an earlier project state.
 
-```text
-/home/workspace/<linux-account>/<project-name>/
-├── .venv/
+---
+
+## Repository structure
+
+```
+.
+├── README.md
+├── requirements.txt
 ├── code/
-│   ├── experiment_4_multimodal.py
-│   └── lab_pipeline/
+│   ├── experiment/                   # One script per experiment (26 total)
+│   │   ├── experiment_1_face[o+c]_no_instruction.py
+│   │   ├── experiment_2_face[o+c]_instruction.py
+│   │   ├── experiment_3_spec[o+c]_instruction.py
+│   │   ├── experiment_4_facespec[o+c]_instruction.py
+│   │   ├── experiment_5_face[o]_no_instruction.py
+│   │   ├── experiment_6_face[o]_instruction.py
+│   │   ├── experiment_7_spec[o]_instruction.py
+│   │   ├── experiment_8_facespec[o]_instruction.py
+│   │   ├── experiment_9_gpt5_face[o+c]_no_instruction.py
+│   │   ├── experiment_10_gpt5_face[o+c]_instruction.py
+│   │   ├── experiment_11_gemini_face[o+c]_no_instruction.py
+│   │   ├── experiment_12_gpt5_spec[o+c]_instruction.py
+│   │   ├── experiment_13_gpt5_facespec[o+c]_instruction.py
+│   │   ├── experiment_14_gemini_face[o+c]_instruction.py
+│   │   ├── experiment_15_gemini_spec[o+c]_instruction.py
+│   │   ├── experiment_16_gemini_facespec[o+c]_instruction.py
+│   │   ├── experiment_17_gpt5_face[o]_no_instruction.py
+│   │   ├── experiment_18_gpt5_face[o]_instruction.py
+│   │   ├── experiment_19_gpt5_spec[o]_instruction.py
+│   │   ├── experiment_20_gpt5_facespec[o]_instruction.py
+│   │   ├── experiment_21_gemini_face[o]_no_instruction.py
+│   │   ├── experiment_22_gemini_face[o]_instruction.py
+│   │   ├── experiment_23_gemini_spec[o]_instruction.py
+│   │   ├── experiment_24_gemini_facespec[o]_instruction.py
+│   │   └── experiment_26_luna_face[o+c]_no_instruction.py
+│   └── lab_pipeline/                 # Shared, reusable pipeline package
+│       ├── __init__.py
+│       ├── core.py                   # 672 lines — pipeline engine (see below)
+│       ├── datasets.py                # 338 lines — dataset adapters
+│       └── providers.py               # 413 lines — model-provider adapters
 └── jobs/
-    └── run_4_multimodal.slurm
+    └── run_<N>_<same-suffix-as-matching-experiment>.slurm   # one per experiment.py
 ```
 
-Datasets and run results are stored under:
+Every `run_<N>_...slurm` file has a matching `experiment_<N>_...py` file with the exact same suffix — e.g. `jobs/run_26_luna_face[o+c]_no_instruction.slurm` runs `code/experiment/experiment_26_luna_face[o+c]_no_instruction.py`.
 
-```text
-/data1/workspace/students/<user-name>/
+### Filename convention, decoded
 ```
-
-## User configuration
-
-Open:
-
-```text
-jobs/run_4_multimodal.slurm
+experiment_<N>_<provider-tag>_<modality>[<dataset-tag>]_<instruction-state>.py
 ```
+| Segment | Meaning |
+|---|---|
+| `<N>` | Experiment number |
+| `<provider-tag>` | Absent = Ollama (the original/baseline provider). `gpt5` = OpenAI `gpt-5-nano`. `gemini` = Google Gemini. `luna` = OpenAI `gpt-5.6-luna`. |
+| `<modality>` | `face` (face image only), `spec` (spectrogram image only), `facespec` (paired face + spectrogram). |
+| `[<dataset-tag>]` | `[o]` = the **open-mouth-only** dataset (`silver_dataset_open_mouth`). `[o+c]` = the **open+closed-mouth** combined dataset (`P3-V1-Ravdess`). Selects which dataset the job defaults to, via each `.slurm` file's `DATASET_NAME` default. |
+| `<instruction-state>` | `no_instruction` = a short, minimal system prompt. `instruction` = the full, detailed cue-based system prompt (mouth shape/eyebrows/eyes/etc. for faces; energy/frequency/harmonics/etc. for spectrograms). |
 
-Normally, users only need to change:
+### Full experiment matrix (provider × model, verified from source)
+| # | File suffix | Provider | Model |
+|---|---|---|---|
+| 1 | `face[o+c]_no_instruction` | ollama | `ministral-3:14b` |
+| 2 | `face[o+c]_instruction` | ollama | `ministral-3:14b` |
+| 3 | `spec[o+c]_instruction` | ollama | `ministral-3:14b` |
+| 4 | `facespec[o+c]_instruction` | ollama | `ministral-3:14b` |
+| 5 | `face[o]_no_instruction` | ollama | `ministral-3:14b` |
+| 6 | `face[o]_instruction` | ollama | `ministral-3:14b` |
+| 7 | `spec[o]_instruction` | ollama | `ministral-3:14b` |
+| 8 | `facespec[o]_instruction` | ollama | `ministral-3:14b` |
+| 9 | `gpt5_face[o+c]_no_instruction` | openai | `gpt-5-nano` |
+| 10 | `gpt5_face[o+c]_instruction` | openai | `gpt-5-nano` |
+| 11 | `gemini_face[o+c]_no_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 12 | `gpt5_spec[o+c]_instruction` | openai | `gpt-5-nano` |
+| 13 | `gpt5_facespec[o+c]_instruction` | openai | `gpt-5-nano` |
+| 14 | `gemini_face[o+c]_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 15 | `gemini_spec[o+c]_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 16 | `gemini_facespec[o+c]_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 17 | `gpt5_face[o]_no_instruction` | openai | `gpt-5-nano` |
+| 18 | `gpt5_face[o]_instruction` | openai | `gpt-5-nano` |
+| 19 | `gpt5_spec[o]_instruction` | openai | `gpt-5-nano` |
+| 20 | `gpt5_facespec[o]_instruction` | openai | `gpt-5-nano` |
+| 21 | `gemini_face[o]_no_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 22 | `gemini_face[o]_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 23 | `gemini_spec[o]_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 24 | `gemini_facespec[o]_instruction` | gemini | `gemini-3.5-flash-lite` |
+| 26 | `luna_face[o+c]_no_instruction` | openai | `gpt-5.6-luna` |
 
-```bash
-USER_NAME="soongswang-kornkanok"
-PROJECT_NAME="template-pun"
-DATASET_NAME="P3-V1-Ravdess"
-```
+Note: `gpt-5-nano` and `gpt-5.6-luna` are OpenAI's reasoning-family models — they only accept `TEMPERATURE = 1.0` / `TOP_P = 1.0` (custom values throw a `400 unsupported_value` error). Experiment 26 additionally sets `REASONING_EFFORT = "none"` to minimize reasoning-token cost.
 
-The Linux account is detected automatically from the Slurm job.
+---
 
-For example, these values produce:
+## Architecture: `lab_pipeline`
 
-```text
-Code root:
-/home/workspace/high-user-01/template-pun
+Follows four design patterns so that adding a new experiment, dataset modality, or model provider never requires touching the shared pipeline logic:
 
-Dataset root:
-/data1/workspace/students/soongswang-kornkanok/P3-V1-Ravdess
+- **Strategy** — every model provider implements the same `ModelProvider.infer()` interface (in `providers.py`).
+- **Adapter** — `OllamaVisionAdapter` / `OpenAIVisionAdapter` / `GeminiVisionAdapter` translate that common interface into each provider's own request format.
+- **Factory** — `ProviderFactory.create(provider_name, ...)` builds whichever adapter is configured.
+- **Dependency injection** — `WorkerPipeline` receives its provider, queue, checkpoint repository, and output interpreter rather than constructing them itself.
 
-Run root:
-/data1/workspace/students/soongswang-kornkanok/template-pun/slurm-runs
-```
+### `lab_pipeline/datasets.py`
+| Class | Purpose |
+|---|---|
+| `FaceSpectrogramDatasetAdapter` | Multimodal: pairs a face image with a spectrogram image by matching normalized filename stems (strips `-img-`/`-spec-` tags). `strict_pairs=True` raises if any file is left unmatched; `allow_positional_fallback=True` allows pairing by sorted position when *no* filename match exists at all for a class (off by default in every experiment — the riskier option). |
+| `FaceImageDatasetAdapter` | Single-modality: walks `Img/{Positive,Negative,Neutral}/`, one `InferenceJob` per face image. |
+| `SpectrogramImageDatasetAdapter` | Single-modality: same, for `Spectrogram/{Positive,Negative,Neutral}/`. |
 
-## Dataset structure
+All three expose `.build()` (returns all `InferenceJob`s) and `.split(jobs, test_size, seed)` (stratified `sklearn.train_test_split`). Hidden files (`._*` and dotfiles from e.g. macOS zip artifacts) are filtered out automatically.
 
-Experiment 4 expects the selected dataset to contain:
+### `lab_pipeline/providers.py`
+| Class | Purpose |
+|---|---|
+| `OllamaVisionAdapter` | Local Ollama server via the `ollama` SDK's `AsyncClient`. Images sent as a flat base64 `images` list. |
+| `OpenAIVisionAdapter` | OpenAI Chat Completions API. Images sent as base64 data-URI `image_url` content blocks. Optional `reasoning_effort` (`"minimal"` / `"none"` / etc.) for `gpt-5`-family reasoning models — omitted from the request entirely if left `None`, so non-reasoning models are unaffected. |
+| `GeminiVisionAdapter` | Gemini API via `google-genai`'s `Client`. Images sent as inline `Part.from_bytes`. Optional `thinking_level` (default `"minimal"`) to reduce Gemini 3.x thinking-token cost — note this is a *different* parameter than Gemini 2.5-era's `thinking_budget`; sending the wrong one for a given model generation returns a `400` error. |
+| `ProviderFactory.create(provider, ...)` | Picks the adapter class based on the `provider` string (`"ollama"` / `"openai"` / `"gemini"`), and forwards `api_key`, `thinking_level`, `reasoning_effort` through to whichever adapter is constructed. |
 
-```text
-P3-V1-Ravdess/
-├── Img/
-│   ├── Positive/
-│   ├── Negative/
-│   └── Neutral/
-└── Spectrogram/
-    ├── Positive/
-    ├── Negative/
-    └── Neutral/
-```
+Both API-based adapters retry failed requests with exponential backoff, applying a **much longer** backoff specifically when the error text contains `429` / `rate_limit` / `RESOURCE_EXHAUSTED` than for other transient errors.
 
-The Slurm script exports `DATASET_ROOT`, and Python automatically selects:
+### `lab_pipeline/core.py`
+| Component | Purpose |
+|---|---|
+| `RunPaths` | The on-disk layout for one run: `run_dir/{log,timestamp,output}/`. |
+| `PipelineConfig` | Frozen dataclass holding every experiment setting (provider, model, prompt, sampling params, retry policy, Redis connection, BERT settings, `immutable_settings` for provenance). |
+| `InferenceJob` | One unit of work: `job_id`, `label`, `image_paths` (a tuple — length 1 for single-modality, 2 for paired), `metadata`. |
+| `OutputInterpreter` | Maps a model's raw free-text answer to `Positive`/`Negative`/`Neutral`, optionally backed by a DistilBERT zero-shot classifier (`BERT_ENABLED`). |
+| `RedisJobQueue` | Distributes pending jobs across `NUM_WORKERS` async workers. |
+| `CheckpointRepository` | Disk-backed record of completed jobs — enables resume after a crash, Slurm timeout, or provider billing cutoff without redoing finished work. |
+| `RunMetadataRepository` | Records run status (`"completed"` / `"incomplete"` / `"failed"` / `"validated"`) and timing to `run.json`. |
+| `majority_vote()` | Combines `NUM_RUNS` repeated predictions per job into one final label (ties fall back to `"Neutral"`). |
+| `WorkerPipeline` | The worker loop itself: pull job → call provider `NUM_RUNS` times → majority vote → interpret output → checkpoint result. |
+| `build_or_load_manifest()` | Builds the test-set job list fresh, or loads an existing `manifest.jsonl` when resuming. |
+| `write_reports()` | Writes `output/results.csv`, `output/metrics.json`, `output/timing_per_worker.csv`, `output/timing_pipeline.csv` (see exact contents below). |
 
-```text
-DATASET_ROOT/Img
-DATASET_ROOT/Spectrogram
-```
+---
 
-Users do not need to enter these complete paths manually.
+## Experiment script shape
 
-## Run structure
-
-Every new Slurm job automatically creates:
-
-```text
-/data1/workspace/students/<user-name>/<project-name>/slurm-runs/
-└── run-<job-id>-<UTC-timestamp>/
-    ├── run.json
-    ├── log/
-    │   ├── bootstrap.out
-    │   ├── bootstrap.err
-    │   ├── stdout.log
-    │   ├── stderr.log
-    │   ├── pipeline.log
-    │   └── ollama.log
-    ├── timestamp/
-    │   ├── manifest.jsonl
-    │   ├── results_checkpoint.jsonl
-    │   └── progress.json
-    └── output/
-        ├── results.csv
-        ├── metrics.json
-        └── timing reports
-```
-
-## First validation
-
-To process only three test samples, open:
-
-```text
-code/experiment_4_multimodal.py
-```
-
-Set:
+Every `experiment_*.py` follows the identical structure and differs only in its configuration block:
 
 ```python
-MAX_SAMPLES = 3
-```
-
-Then submit:
-
-```bash
-cd /home/workspace/high-user-01/template-pun
-sbatch jobs/run_4_multimodal.slurm
-```
-
-Each sample contains one face image and one matching spectrogram image.
-
-After the validation succeeds, restore:
-
-```python
-MAX_SAMPLES = 0
-```
-
-`MAX_SAMPLES = 0` means there is no sample limit, so the program processes the complete test split.
-
-## Full run
-
-After restoring `MAX_SAMPLES = 0`, submit:
-
-```bash
-cd /home/workspace/high-user-01/template-pun
-sbatch jobs/run_4_multimodal.slurm
-```
-
-## Resume
-
-To continue an interrupted run, use its original run directory:
-
-```bash
-RESUME_RUN_DIR="/data1/workspace/students/soongswang-kornkanok/template-pun/slurm-runs/run-1234-TIMESTAMP" \
-sbatch jobs/run_4_multimodal.slurm
-```
-
-The new Slurm job reads the original manifest and checkpoint files. It then places only unfinished samples back into Redis.
-
-Do not change the model, prompt, dataset, split settings, or `MAX_SAMPLES` when resuming the same run.
-
-## Responsibilities
-
-The Slurm script:
-
-* requests CPU, memory, and one GPU;
-* derives paths from the user, project, and dataset names;
-* creates the run directory;
-* checks the Redis system service;
-* starts Ollama inside the Slurm allocation;
-* exports runtime paths to Python;
-* executes the Python experiment.
-
-The Python program:
-
-* selects the `Img/` and `Spectrogram/` folders;
-* builds face–spectrogram pairs;
-* creates Redis workers;
-* calls the configured model;
-* saves durable checkpoints;
-* resumes unfinished work;
-* exports CSV and JSON reports.
-
-## Model and experiment settings
-
-Edit these settings in:
-
-```text
-code/experiment_4_multimodal.py
-```
-
-Examples:
-
-```python
-MODEL = "ministral-3:14b"
-NUM_RUNS = 3
+FACE_SUBDIRECTORY = "Img"                # and/or SPECTROGRAM_SUBDIRECTORY
+PROVIDER = "openai"                       # "ollama" | "openai" | "gemini"
+MODEL = "gpt-5-nano"
+TEMPERATURE = 1.0
+TOP_P = 1.0
+REASONING_EFFORT = "none"                 # OpenAI reasoning models only
+THINKING_LEVEL = "minimal"                # Gemini 3.x only
+NUM_RUNS = 3                               # calls per image, majority vote
 NUM_WORKERS = 3
 MAX_CONCURRENCY = 3
-MAX_SAMPLES = 0
+MAX_SAMPLES = 0                            # 0 = full test set; >0 = smoke-test cap
+BERT_ENABLED = False
+SYSTEM_PROMPT = "..."                      # the actual instruction/prompt
 ```
 
-The Slurm script reads `PROVIDER` and `MODEL` automatically from the Python file, so these values are not configured twice.
+then: `resolve_dataset_paths()` → `create_config()` → `run()` (build dataset → resolve/load manifest → resolve pending jobs from checkpoint → `WorkerPipeline.run()` → `write_reports()`) → `main()`.
 
-## Design patterns
+### Adding a new experiment
+Copy the closest existing script and change only what genuinely differs: `PROVIDER`/`MODEL`, `SYSTEM_PROMPT`, the dataset adapter used, and the `"experiment"`/`experiment_name` labels. Everything from `build_jobs()` downward needs no changes.
 
-* **Strategy:** `ModelProvider`
-* **Adapter:** `OllamaVisionAdapter`
-* **Factory:** `ProviderFactory`
-* **Dependency injection:** `WorkerPipeline` receives the provider, Redis queue, checkpoint repository, and output interpreter.
+---
 
-File 5 can later reuse the same `lab_pipeline` package and add only a face-only dataset adapter and experiment entry point.
+## Slurm scripts (`jobs/*.slurm`)
+
+1. **User configuration** — `USER_NAME`, `PROJECT_NAME`, `DATASET_NAME` (each overridable via environment at submit time; `DATASET_NAME`'s default matches the `[o]`/`[o+c]` tag in the filename).
+2. **`DEST_LABEL` auto-derivation** — derived from the matching experiment script's filename (`experiment_<N>_<rest>.py` → `results-<rest>`), used as the destination subfolder under `complete-runs/`. Overridable via an explicit `DEST_LABEL=...`.
+3. **Redis check** — pings the Redis service before proceeding.
+4. **Reads `PROVIDER`/`MODEL` directly from the `.py` file** via an embedded Python AST parser — the Slurm script never hardcodes which model/provider a given experiment uses.
+5. **Model backend setup**:
+   - `PROVIDER == "ollama"` → starts a local `ollama serve` process on a free port, waits for `/api/tags` to respond, verifies the model is available.
+   - `PROVIDER == "openai"` → sets `MODEL_HOST` to the OpenAI API endpoint, requires `OPENAI_API_KEY`.
+   - `PROVIDER == "gemini"` → sets `MODEL_HOST`, requires `GOOGLE_API_KEY`.
+6. **conda environment activation** — `conda activate emotion-recognition` before resolving `PYTHON`.
+7. **Runs the experiment**: `srun --unbuffered "$PYTHON" "$PROGRAM"` — this is internal to the script; you never type `srun` yourself, only `sbatch`.
+8. **On success only** (exit code `0`), copies the completed run directory into `complete-runs/<DEST_LABEL>/`.
+
+---
+
+## Running an experiment
+
+```bash
+# 1. Load API keys into the current shell (needed for openai/gemini providers)
+source ~/.env.llm
+
+# 2. Submit
+DATASET_NAME="<dataset-folder-name>" sbatch "jobs/run_9_gpt5_face[o+c]_no_instruction.slurm"
+
+# 3. Watch
+squeue -u <your-username>
+tail -f /data1/workspace/students/<user>/project-01/slurm-runs/run-<jobid>-*/log/stdout.log
+```
+
+### Smoke-testing before a full run
+Set `MAX_SAMPLES` to a small number (e.g. `10`) before running the full dataset, to confirm the provider/prompt/pipeline are wired correctly (and, for paid API providers, to check actual per-call cost) before committing to a run of potentially tens of thousands of images.
+
+### Resuming an interrupted run
+Completed results are already saved to the checkpoint on disk even if a job is killed (Slurm time limit, provider billing exhaustion, network failure). Resume the *same* run directory:
+```bash
+source ~/.env.llm
+RESUME_RUN_DIR="/data1/workspace/students/<user>/project-01/slurm-runs/run-<jobid>-<timestamp>" \
+  DATASET_NAME="<same-dataset-as-before>" \
+  sbatch "jobs/run_9_gpt5_face[o+c]_no_instruction.slurm"
+```
+This gets a **new** Slurm job ID (expected — IDs are never reused) but reuses the same run directory, only processing jobs that weren't already completed. `output/results.csv` etc. end up containing the merged results from every attempt.
+
+### Concurrency tuning
+For a **local Ollama** provider, raising `NUM_WORKERS`/`MAX_CONCURRENCY` has little effect — a single GPU serializes inference regardless of concurrent request count (confirmed empirically: wall time ≈ `jobs × avg_api_ms`, i.e. effectively sequential). For **API providers** with a high rate limit, raising concurrency (e.g. `NUM_WORKERS=100`, as in experiments 17+) gives close to proportional speedup, limited mainly by local CPU (image encoding) rather than the API.
+
+---
+
+## Environment variables reference
+
+| Variable | Set by | Purpose |
+|---|---|---|
+| `DATASET_ROOT` | Slurm script | Root folder containing `Img/` and/or `Spectrogram/` |
+| `RUN_DIR` | Slurm script | Where this run's logs/manifest/output get written |
+| `RESUME` | Slurm script | `1` if resuming, else `0` |
+| `MODEL_HOST` | Slurm script | Ollama server URL, or the OpenAI/Gemini API endpoint |
+| `OPENAI_API_KEY` | Your shell (`.env.llm`), passed through by Slurm | OpenAI authentication |
+| `GOOGLE_API_KEY` | Your shell (`.env.llm`), passed through by Slurm | Gemini authentication |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | Slurm script (defaults: `127.0.0.1` / `6379` / `0`) | Redis connection |
+
+`.env.llm` (outside the git repo, `chmod 600`) holds the two API keys and is `source`d manually before each `sbatch` call — never committed to git, never written into any run's output files.
+
+---
+
+## Output files, per run
+
+| File | Contents |
+|---|---|
+| `timestamp/manifest.jsonl` | The frozen list of test-set jobs for this run |
+| `output/results.csv` | Per-job model prediction vs. ground truth (`pd.DataFrame(results)`) |
+| `output/metrics.json` | `accuracy`, `confusion_matrix`, `classification_report` (via scikit-learn), plus `records_in_checkpoint`/`successful_samples`/`failed_samples` |
+| `output/timing_per_worker.csv` | Per-worker: `total_processed`, `successful`, `failed`, `wall_time_s`, `avg_api_ms` |
+| `output/timing_pipeline.csv` | `run_id`, `model`, `provider`, `processed_this_attempt`, `pipeline_wall_time_s`, `avg_api_ms` (`avg_api_ms` is milliseconds, not minutes — divide `pipeline_wall_time_s` by 60 for run time in minutes) |
+| `log/stdout.log` / `log/stderr.log` | Full run log |
+| `run.json` | Run status, timestamps, immutable config snapshot (including a SHA-256 hash of the system prompt for provenance) |
+
+---
