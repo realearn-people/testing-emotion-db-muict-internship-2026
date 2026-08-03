@@ -24,10 +24,17 @@ VALID_LABELS = ("Positive", "Negative", "Neutral")
 
 
 def utc_now() -> str:
+    """Return the current UTC time as an ISO 8601 string, truncated to whole seconds."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def json_default(value: Any) -> Any:
+    """Fallback serializer used by json.dumps() for objects it can't handle natively.
+
+    Converts Path objects to strings and numpy-like scalars (anything with an
+    `.item()` method) to plain Python values. Raises TypeError for anything else,
+    matching the standard json.dumps `default=` contract.
+    """
     if isinstance(value, Path):
         return str(value)
     if hasattr(value, "item"):
@@ -36,10 +43,21 @@ def json_default(value: Any) -> Any:
 
 
 def json_dumps(value: Any, *, indent: int | None = None) -> str:
+    """Serialize a Python value to a JSON string.
+
+    Thin wrapper around json.dumps() that keeps non-ASCII characters readable
+    (ensure_ascii=False) and uses json_default() to handle Path/numpy-like values.
+    """
     return json.dumps(value, ensure_ascii=False, default=json_default, indent=indent)
 
 
 def atomic_write_json(path: Path, value: Any) -> None:
+    """Write `value` as JSON to `path` without ever leaving a half-written file.
+
+    Writes to a temporary "<path>.tmp" file first, then atomically renames it
+    over the destination. This prevents readers from ever seeing a corrupted
+    or partially-written JSON file, even if the process crashes mid-write.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json_dumps(value, indent=2) + "\n", encoding="utf-8")
@@ -47,6 +65,11 @@ def atomic_write_json(path: Path, value: Any) -> None:
 
 
 def safe_key(value: str) -> str:
+    """Sanitize a string so it is safe to use as a Redis key / namespace segment.
+
+    Replaces any run of characters that are not letters, digits, dots, underscores,
+    or hyphens with a single underscore, and strips leading/trailing underscores.
+    """
     return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("_")
 
 
@@ -59,10 +82,16 @@ class RunPaths:
 
     @classmethod
     def from_run_dir(cls, run_dir: Path) -> "RunPaths":
+        """Build a RunPaths from a base run directory.
+
+        Resolves `run_dir` to an absolute path and derives the standard
+        sub-folders ("log", "timestamp", "output") used throughout a run.
+        """
         root = run_dir.expanduser().resolve()
         return cls(root, root / "log", root / "timestamp", root / "output")
 
     def create(self) -> None:
+        """Create the run directory and all of its sub-folders if they don't exist yet."""
         for path in (self.run_dir, self.log_dir, self.timestamp_dir, self.output_dir):
             path.mkdir(parents=True, exist_ok=True)
 
@@ -97,6 +126,12 @@ class PipelineConfig:
     immutable_settings: Mapping[str, Any] = field(default_factory=dict)
 
     def runtime_record(self) -> dict[str, Any]:
+        """Return this config as a plain dict, safe to log or save to disk.
+
+        Converts the dataclass to a dict via asdict() and masks the Redis
+        password (replacing it with the literal string "<set>" or None) so
+        secrets never end up in run.json or log files.
+        """
         record = asdict(self)
         record["redis_password"] = "<set>" if self.redis_password else None
         return record
@@ -110,6 +145,7 @@ class InferenceJob:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
+        """Convert this job into a JSON-serializable dict (e.g. for the manifest file or Redis)."""
         return {
             "job_id": self.job_id,
             "label": self.label,
@@ -119,6 +155,7 @@ class InferenceJob:
 
     @classmethod
     def from_record(cls, value: Mapping[str, Any]) -> "InferenceJob":
+        """Reconstruct an InferenceJob from a dict previously produced by to_record()."""
         return cls(
             job_id=str(value["job_id"]),
             label=str(value["label"]),
@@ -127,6 +164,9 @@ class InferenceJob:
         )
 
     def result_base(self) -> dict[str, Any]:
+        """Build the common result fields (job_id, label, image_paths, metadata) shared
+        by every result row, so callers only need to add prediction-specific fields on top.
+        """
         return {
             "job_id": self.job_id,
             "label": self.label,
@@ -151,6 +191,11 @@ class OutputInterpreter:
     )
 
     def __init__(self, *, bert_enabled: bool, bert_model: str, threshold: float, min_margin: float) -> None:
+        """Store the BERT/zero-shot-classification settings and set up lazy-loading state.
+
+        The actual classifier model is NOT loaded here; it is only loaded on first
+        use (see _get_classifier), so constructing this object is cheap.
+        """
         self.bert_enabled = bert_enabled
         self.bert_model = bert_model
         self.threshold = threshold
@@ -161,6 +206,9 @@ class OutputInterpreter:
 
     @staticmethod
     def _normalise(text: str) -> str:
+        """Clean up raw model output for matching: lowercase, strip HTML-like tags,
+        remove punctuation/non-letters, and collapse repeated whitespace.
+        """
         cleaned = text.strip().lower().replace("\n", " ")
         cleaned = re.sub(r"<[^>]+>", " ", cleaned)
         cleaned = re.sub(r"[^a-z\s]", " ", cleaned)
@@ -168,6 +216,13 @@ class OutputInterpreter:
 
     @classmethod
     def _direct(cls, text: str) -> str | None:
+        """Try to read the label straight off the text without needing the BERT model.
+
+        Returns "Positive", "Negative", or "Neutral" (capitalised) if the cleaned
+        text is exactly one of those words, or matches a simple
+        "sentiment is <label>" / "answer: <label>" style pattern. Returns None if
+        no direct match is found, so the caller can fall back to the BERT classifier.
+        """
         cleaned = cls._normalise(text)
         if cleaned in {"positive", "negative", "neutral"}:
             return cleaned.capitalize()
@@ -182,6 +237,12 @@ class OutputInterpreter:
         return None
 
     def _get_classifier(self) -> Any:
+        """Lazily load and cache the zero-shot-classification (BERT/NLI) pipeline.
+
+        Returns None immediately if BERT is disabled or a previous load attempt
+        already failed, so we don't keep retrying a broken model on every call.
+        On success the loaded pipeline is cached on self._classifier for reuse.
+        """
         if not self.bert_enabled or self._load_failed:
             return None
         if self._classifier is not None:
@@ -197,6 +258,16 @@ class OutputInterpreter:
             return None
 
     def interpret(self, raw_output: str | None) -> LabelDecision:
+        """Turn one raw model response into a LabelDecision (Positive/Negative/Neutral/None).
+
+        Order of attempts:
+          1. Empty output -> LabelDecision(None, "empty_output").
+          2. Known refusal phrases (e.g. "I can't assist") -> LabelDecision(None, "refusal_or_unusable_output").
+          3. Direct text match via _direct() -> LabelDecision(label, "direct_match").
+          4. Otherwise, fall back to the BERT zero-shot classifier (thread-safe via
+             self._lock) and apply the configured threshold/margin to decide whether
+             the top predicted label is confident enough to keep.
+        """
         text = "" if raw_output is None else str(raw_output).strip()
         cleaned = self._normalise(text)
         zero = {label: 0.0 for label in VALID_LABELS}
@@ -265,6 +336,13 @@ class RedisJobQueue:
     """
 
     def __init__(self, config: PipelineConfig) -> None:
+        """Connect to Redis and set up the namespaced queue keys for this run.
+
+        The namespace is built from the OS user and the run_id (sanitised via
+        safe_key) so that multiple users/runs sharing the same Redis instance
+        don't collide. Also registers the Lua CLAIM_SCRIPT used by claim() to
+        atomically pop-and-reserve a job.
+        """
         try:
             import redis.asyncio as redis_async
         except ImportError as exc:
@@ -286,6 +364,12 @@ class RedisJobQueue:
         self._claim = self._redis.register_script(self.CLAIM_SCRIPT)
 
     async def initialise(self, jobs: Sequence[InferenceJob]) -> None:
+        """Reset this run's queue in Redis and load it with the given jobs.
+
+        Pings Redis to confirm connectivity, clears any leftover pending/
+        processing/completed/failed data from a previous attempt at this
+        namespace, then pushes all jobs onto the pending list.
+        """
         await self._redis.ping()
         await self._redis.delete(self.pending, self.processing, self.completed, self.failed)
         if jobs:
@@ -293,16 +377,33 @@ class RedisJobQueue:
         LOGGER.info("Redis queue initialised with %d pending jobs", len(jobs))
 
     async def claim(self) -> InferenceJob | None:
+        """Atomically pop the next pending job and mark it as being processed.
+
+        Runs the CLAIM_SCRIPT Lua script so the pop-from-pending +
+        add-to-processing happens as a single atomic Redis operation, which is
+        safe even with multiple concurrent workers. Returns None once the
+        pending queue is empty.
+        """
         payload = await self._claim(keys=[self.pending, self.processing], args=[])
         return None if payload is None else InferenceJob.from_record(json.loads(payload))
 
     async def acknowledge(self, job: InferenceJob, result: Mapping[str, Any]) -> None:
+        """Mark a job as successfully completed.
+
+        Atomically removes the job from the "processing" hash and records its
+        result in the "completed" hash.
+        """
         async with self._redis.pipeline(transaction=True) as pipe:
             pipe.hdel(self.processing, job.job_id)
             pipe.hset(self.completed, job.job_id, json_dumps(result))
             await pipe.execute()
 
     async def reject(self, job: InferenceJob, error: str) -> None:
+        """Mark a job as failed.
+
+        Atomically removes the job from the "processing" hash and records the
+        job plus its error message and failure timestamp in the "failed" hash.
+        """
         record = {"job": job.to_record(), "error": error, "failed_at": utc_now()}
         async with self._redis.pipeline(transaction=True) as pipe:
             pipe.hdel(self.processing, job.job_id)
@@ -310,11 +411,19 @@ class RedisJobQueue:
             await pipe.execute()
 
     async def close(self) -> None:
+        """Close the underlying Redis connection."""
         await self._redis.aclose()
 
 
 class CheckpointRepository:
     def __init__(self, paths: RunPaths, *, resume: bool, total_jobs: int) -> None:
+        """Set up the on-disk checkpoint/progress files for this run.
+
+        If a checkpoint file already exists and `resume` is False, raises
+        FileExistsError to avoid silently overwriting a previous run's results.
+        If `resume` is True, loads the existing checkpoint into memory via
+        _load() before continuing.
+        """
         self.checkpoint_path = paths.timestamp_dir / "results_checkpoint.jsonl"
         self.progress_path = paths.timestamp_dir / "progress.json"
         self.total_jobs = total_jobs
@@ -330,6 +439,9 @@ class CheckpointRepository:
         self._write_progress()
 
     def _load(self) -> None:
+        """Read the existing checkpoint JSONL file back into memory (self._latest),
+        keyed by job_id, so a resumed run knows which jobs are already done.
+        """
         with self.checkpoint_path.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
                 if not line.strip():
@@ -341,6 +453,9 @@ class CheckpointRepository:
                     raise ValueError(f"Invalid checkpoint line {line_number}: {exc}") from exc
 
     def _write_progress(self) -> None:
+        """Recompute completed/failed/remaining counts and write them to progress.json,
+        giving an at-a-glance view of run progress without parsing the full checkpoint.
+        """
         completed = sum(row.get("status") == "completed" for row in self._latest.values())
         failed = sum(row.get("status") == "failed" for row in self._latest.values())
         atomic_write_json(
@@ -355,6 +470,13 @@ class CheckpointRepository:
         )
 
     async def save(self, result: dict[str, Any]) -> None:
+        """Persist one job result to the checkpoint file, durably.
+
+        Appends the result as a JSON line, flushes and fsyncs the file so it
+        survives a crash, updates the in-memory cache, and refreshes
+        progress.json. Guarded by an asyncio.Lock since multiple workers call
+        this concurrently.
+        """
         async with self._lock:
             with self.checkpoint_path.open("a", encoding="utf-8") as handle:
                 handle.write(json_dumps(result) + "\n")
@@ -364,21 +486,30 @@ class CheckpointRepository:
             self._write_progress()
 
     def completed_job_ids(self) -> set[str]:
+        """Return the set of job_ids that have already completed successfully."""
         return {
             job_id for job_id, row in self._latest.items()
             if row.get("status") == "completed"
         }
 
     def latest_in_manifest_order(self, manifest: Sequence[InferenceJob]) -> list[dict[str, Any]]:
+        """Return the checkpointed results for jobs in `manifest`, in the manifest's order.
+
+        Jobs that have no recorded result yet are simply skipped.
+        """
         return [self._latest[job.job_id] for job in manifest if job.job_id in self._latest]
 
 
 class RunMetadataRepository:
     def __init__(self, config: PipelineConfig) -> None:
+        """Bind this repository to the run.json file for the given config's run directory."""
         self.path = config.paths.run_dir / "run.json"
         self.config = config
 
     def _base(self) -> dict[str, Any]:
+        """Build the base metadata dict (run id, experiment name, slurm job id,
+        full configuration, and immutable settings) shared by fresh and resumed runs.
+        """
         return {
             "run_id": self.config.run_id,
             "experiment_name": self.config.experiment_name,
@@ -388,6 +519,15 @@ class RunMetadataRepository:
         }
 
     def start(self) -> None:
+        """Create or resume run.json at the start of a run.
+
+        On a fresh run: fails if run.json already exists (to avoid clobbering
+        a previous run), otherwise writes a new record with status "running".
+        On resume: requires run.json to already exist, checks that the
+        immutable_settings match the original run (raising ValueError if they
+        don't, since changing them mid-resume would be unsafe), and updates
+        the record with a new "resumed_at_utc" timestamp.
+        """
         if self.config.resume:
             if not self.path.is_file():
                 raise FileNotFoundError(f"run.json not found for resume: {self.path}")
@@ -406,6 +546,9 @@ class RunMetadataRepository:
         atomic_write_json(self.path, record)
 
     def finish(self, status: str, *, error: str | None = None) -> None:
+        """Update run.json at the end of a run with a final status (e.g. "completed"
+        or "failed") and an optional error message, plus an "updated_at_utc" timestamp.
+        """
         record = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else self._base()
         record.update({"status": status, "updated_at_utc": utc_now()})
         if error:
@@ -414,6 +557,12 @@ class RunMetadataRepository:
 
 
 def majority_vote(predictions: Sequence[str | None], fallback: str = "Neutral") -> str:
+    """Pick the majority label out of several per-run predictions for the same job.
+
+    Ignores None/invalid entries. Returns `fallback` if there are no valid
+    predictions at all, or if the top two labels are tied for first place;
+    otherwise returns the single most common valid label.
+    """
     valid = [prediction for prediction in predictions if prediction in VALID_LABELS]
     if not valid:
         return fallback
@@ -435,6 +584,10 @@ class WorkerPipeline:
         provider: ModelProvider,
         interpreter: OutputInterpreter,
     ) -> None:
+        """Wire together the pipeline's dependencies (config, job queue, checkpoint
+        store, model provider, output interpreter) and initialise per-run stat
+        counters used while workers are running.
+        """
         self.config = config
         self.queue = queue
         self.checkpoint = checkpoint
@@ -446,6 +599,15 @@ class WorkerPipeline:
         self._progress_lock = asyncio.Lock()
 
     async def _process_job(self, worker_id: str, job: InferenceJob) -> dict[str, Any]:
+        """Run one inference job to completion and build its result record.
+
+        Fires `config.num_runs` concurrent calls to the model provider for the
+        same job (to reduce noise from a single response), interprets each raw
+        output into a label via `self.interpreter`, combines them with
+        majority_vote(), and returns a result dict containing the final
+        prediction plus per-run diagnostics (raw outputs, methods, scores,
+        latencies). Raises RuntimeError if every single run failed.
+        """
         started = time.perf_counter()
         tasks = [
             self.provider.infer(
@@ -500,6 +662,12 @@ class WorkerPipeline:
         return result
 
     async def _worker(self, worker_id: str) -> None:
+        """Run one worker's main loop: repeatedly claim a job from the queue,
+        process it, checkpoint the result, and acknowledge/reject it in the
+        queue, until there are no more pending jobs. Tracks per-worker stats
+        (processed/successful/failed counts, wall time, average API latency)
+        in `self.worker_stats` for later reporting.
+        """
         started = time.perf_counter()
         processed = successful = failed = 0
         total_api_ms = 0.0
@@ -547,6 +715,13 @@ class WorkerPipeline:
         }
 
     async def run(self, pending: Sequence[InferenceJob]) -> tuple[float, dict[str, Any]]:
+        """Run the whole pipeline for a batch of pending jobs.
+
+        Loads `pending` into the job queue, then launches `config.workers`
+        concurrent `_worker()` coroutines and waits for them all to finish
+        (always closing the queue afterward, even on error). Returns the
+        total elapsed wall-clock time and the per-worker stats dict.
+        """
         self._total_pending = len(pending)
         await self.queue.initialise(pending)
         started = time.perf_counter()
@@ -561,6 +736,12 @@ class WorkerPipeline:
 
 
 def setup_logging(log_dir: Path) -> None:
+    """Configure the module-level LOGGER to write to both stdout and a log file.
+
+    Creates `log_dir` if needed, resets any existing handlers (so this can be
+    called safely more than once), and attaches a stream handler plus a file
+    handler ("pipeline.log") sharing the same timestamped log format.
+    """
     log_dir.mkdir(parents=True, exist_ok=True)
     LOGGER.setLevel(logging.INFO)
     LOGGER.handlers.clear()
@@ -574,6 +755,10 @@ def setup_logging(log_dir: Path) -> None:
 
 
 def write_manifest(path: Path, jobs: Sequence[InferenceJob]) -> None:
+    """Write the full list of jobs for this run to a JSONL manifest file (one job per line).
+
+    This manifest is what allows an exact resume later via load_manifest().
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for job in jobs:
@@ -581,6 +766,11 @@ def write_manifest(path: Path, jobs: Sequence[InferenceJob]) -> None:
 
 
 def load_manifest(path: Path) -> list[InferenceJob]:
+    """Read back the list of jobs from a JSONL manifest file written by write_manifest().
+
+    Raises FileNotFoundError if the manifest doesn't exist, or ValueError if
+    any line contains invalid/unparsable JSON (including the offending line number).
+    """
     if not path.is_file():
         raise FileNotFoundError(f"Resume manifest not found: {path}")
     jobs: list[InferenceJob] = []
@@ -601,6 +791,15 @@ def build_or_load_manifest(
     resume: bool,
     build_jobs: Callable[[], tuple[Sequence[InferenceJob], int]],
 ) -> tuple[list[InferenceJob], int]:
+    """Get the list of jobs to run, either by loading an exact resume manifest
+    or by building it fresh.
+
+    If `resume` is True, loads the existing manifest at `path` (so a resumed
+    run processes exactly the same jobs as the original) and returns a
+    train_count of -1 as a sentinel since it isn't recomputed. Otherwise calls
+    `build_jobs()` to construct the jobs and their train_count, writes them to
+    `path` as a new manifest, and returns them.
+    """
     if resume:
         jobs = load_manifest(path)
         LOGGER.info("Loaded exact resume manifest with %d jobs", len(jobs))
@@ -618,6 +817,18 @@ def write_reports(
     pipeline_elapsed_s: float,
     processed_this_attempt: int,
 ) -> None:
+    """Generate all end-of-run report files from the collected results.
+
+    Writes, into `config.paths.output_dir`:
+      - results.csv: every result row, via pandas.
+      - metrics.json: sample counts, and (if there's at least one successful,
+        valid-label result) accuracy, confusion matrix, and a full
+        classification report from scikit-learn.
+      - timing_per_worker.csv: per-worker processing/timing stats.
+      - timing_pipeline.csv: one summary row for the whole pipeline run
+        (run id, model, provider, elapsed time, average API latency).
+    Raises RuntimeError if pandas is not installed.
+    """
     output = config.paths.output_dir
     output.mkdir(parents=True, exist_ok=True)
     try:
