@@ -8,9 +8,84 @@ Each experiment classifies images (face-only, spectrogram-only, or paired face+s
 
 ---
 
+## Collaborators
+
+| Name | 
+|---|
+|Assistant Professor Watanee Jearanaiwongkul |
+|Associate Professor Teeradaj Racharak | 
+|Rawisara Chantravutikorn |
+|Kornkanok Soongswang | 
+
+---
+
+## Datasets
+
+Two datasets are used across the experiments in this repo, both stored on the cluster's shared data volume (not in this git repo):
+
+```
+/data1/workspace/students/soongswang-kornkanok/project-01/dataset/
+├── P3-V1-Ravdess/
+└── silver_dataset_open_mouth/
+```
+
+Each dataset provides at least the following, so any experiment script can point at either one (`P3-V1-Ravdess` additionally ships a raw `Audio/` folder — see below):
+```
+<dataset-name>/
+├── Img/
+│   ├── Positive/
+│   ├── Negative/
+│   └── Neutral/
+└── Spectrogram/
+    ├── Positive/
+    ├── Negative/
+    └── Neutral/
+```
+- `Img/<label>/` — face images extracted from video frames, one class-labeled folder per sentiment.
+- `Spectrogram/<label>/` — corresponding audio spectrogram images for the same samples, used by the multimodal (`facespec`) and spectrogram-only (`spec`) experiments. Filenames are matched to their paired face image by normalized stem (see `FaceSpectrogramDatasetAdapter` in `lab_pipeline/datasets.py`).
+
+### `P3-V1-Ravdess`
+Derived from the **RAVDESS** dataset (Ryerson Audio-Visual Database of Emotional Speech and Song) — a corpus of actors speaking/singing lexically-matched statements with different emotional expressions. This project's `P3-V1` variant combines samples across **both open-mouth and closed-mouth** frames (referenced as the `[o+c]` dataset tag in experiment/job filenames). Used by experiments 1–4 and 9–16.
+
+Unlike the general two-folder layout above, this dataset also keeps the intermediate audio clips it was built from:
+```
+P3-V1-Ravdess/
+├── Img/{Positive,Negative,Neutral}/          # e.g. Img/Negative/01-01-0...jpg (RAVDESS-style filename)
+├── Audio/{Positive,Negative,Neutral}/         # intermediate audio clips (not read by the pipeline directly)
+└── Spectrogram/{Positive,Negative,Neutral}/
+```
+(`Audio/` is a preprocessing intermediate — `FaceSpectrogramDatasetAdapter` only ever reads `Img/` and `Spectrogram/`; it exists on disk for reference/reproducibility but isn't consumed by any experiment script.)
+
+**Preparation pipeline** (from the original RAVDESS video/audio source):
+
+*Image extraction:*
+1. Each RAVDESS video is split into frames at a **30ms interval** — chosen because an average speaker articulates roughly one phoneme every ~30ms, so this rate captures each distinct mouth/facial shape without excessive redundancy between frames.
+2. Frames with no detectable face are discarded. Remaining frames are sorted into `Positive` / `Negative` / `Neutral` folders based on the sentiment class of the source clip.
+
+*Audio → spectrogram extraction:*
+1. The corresponding RAVDESS audio is likewise sliced into **30ms segments**, matching the same interval as the image extraction for consistency between the two modalities.
+2. Each audio segment is converted to a spectrogram using the **Short-Time Fourier Transform (STFT)** (e.g. via `scipy`), with:
+   - Sampling rate: **48 kHz**
+   - Window size (W): **1400**
+   - Overlap between neighboring segments: **250 samples**
+3. Spectrogram magnitude is expressed in **decibels (dB)**.
+4. Resulting spectrogram axes: **x-axis 0–0.03 s** (time), **y-axis 0–24 kHz** (frequency, i.e. up to the Nyquist frequency for a 48 kHz sampling rate).
+
+This shared 30ms-interval design is what allows `FaceSpectrogramDatasetAdapter` to pair a face frame with its corresponding spectrogram slice — both were sliced from the same source clip at the same cadence, then matched by filename stem.
+
+### `silver_dataset_open_mouth`
+A dataset restricted to **open-mouth-only** frames (referenced as the `[o]` dataset tag in experiment/job filenames). Used by experiments 5–8 and 17–24.
+
+*[Add here: source/provenance of this dataset, why "silver" (e.g. auto-labeled/weakly-supervised vs. a "gold" human-verified set?), sample counts per class, and how "open mouth" frames were selected/filtered from the source video.]*
+
+> Both dataset descriptions above are based on how each dataset is used in the pipeline (folder layout, filename tags, which experiments reference them) rather than on their original creation/labeling process, which I don't have direct knowledge of — please fill in the bracketed notes above with the actual provenance details.
+
+---
+
 ## Repository structure
 
 ```
+
 .
 ├── README.md
 ├── requirements.txt
@@ -246,3 +321,11 @@ For a **local Ollama** provider, raising `NUM_WORKERS`/`MAX_CONCURRENCY` has lit
 | `run.json` | Run status, timestamps, immutable config snapshot (including a SHA-256 hash of the system prompt for provenance) |
 
 ---
+
+## Known issues / gotchas encountered during development
+
+- **`mimetypes` import missing** in `providers.py` surfaces as `name 'mimetypes' is not defined` inside every job's error, not as an obvious import error — check the top-of-file imports if every job fails identically.
+- **`DATASET_NAME` starting with a hyphen** (e.g. a typo) fails the Slurm script's path-name validation regex silently and immediately, before the job even shows up in `squeue`. Check `bootstrap-<jobid>.out/.err` for `fail()` messages when a job seems to vanish instantly.
+- **Provider errors mentioning a model is "no longer available"** are account/billing/tier issues, not code bugs — confirm by reproducing the same error with a bare, non-async, text-only SDK call outside the pipeline entirely.
+- **Gemini model names and parameter names have changed across generations** during this project (`gemini-2.0-flash` → deprecated; `thinking_budget` → `thinking_level` between the 2.5 and 3.x generations) — always check `client.models.list()` for current availability rather than trusting a model name from documentation or an earlier experiment.
+- **`gpt-5-nano` / `gpt-5.6-luna` force `TEMPERATURE=1.0`/`TOP_P=1.0`** — a custom value throws `400 unsupported_value`.
