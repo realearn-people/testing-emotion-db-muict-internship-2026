@@ -74,9 +74,138 @@ P3-V1-Ravdess/
 This shared 30ms-interval design is what allows `FaceSpectrogramDatasetAdapter` to pair a face frame with its corresponding spectrogram slice — both were sliced from the same source clip at the same cadence, then matched by filename stem.
 
 ### `silver_dataset_open_mouth`
-A dataset restricted to **open-mouth-only** frames (referenced as the `[o]` dataset tag in experiment/job filenames). Used by experiments 5–8 and 17–24.
 
-*[Add here: source/provenance of this dataset, why "silver" (e.g. auto-labeled/weakly-supervised vs. a "gold" human-verified set?), sample counts per class, and how "open mouth" frames were selected/filtered from the source video.]*
+A dataset restricted to **open-mouth-only** frames, referenced as the `[o]` dataset tag in experiment/job filenames. It is derived from `P3-V1-Ravdess`, which contains both open-mouth and closed-mouth face frames. Used by experiments 5–8 and 17–24.
+
+This dataset was created as a **silver dataset** for mouth-state filtering. In this context, “silver” means that the mouth-state labels were not manually annotated for every image. Instead, a smaller manually reviewed sample was used to calibrate a mouth-ratio threshold, and that threshold was then applied automatically to the full dataset.
+
+#### Creation process
+
+A balanced manual review set of 100 face images was first created from `P3-V1-Ravdess`. The sample was balanced into:
+
+```text
+open   = 50
+closed = 50
+```
+
+Each image in this 100-image sample was manually labeled as either `open` or `closed` by visually inspecting the mouth state.
+
+OpenFace was then used to extract facial landmarks from the sampled images. The mouth state was estimated using the outer-lip landmark ratio:
+
+```text
+mouth_ratio = distance(landmark 51, landmark 57) / distance(landmark 48, landmark 54)
+```
+
+where:
+
+```text
+48 = left mouth corner
+54 = right mouth corner
+51 = upper outer lip
+57 = lower outer lip
+```
+
+The ratio compares the vertical mouth opening with the horizontal mouth width.
+
+```text
+small mouth_ratio  -> more likely closed-mouth
+large mouth_ratio  -> more likely open-mouth
+```
+
+Several candidate thresholds were tested against the manually labeled 100-image sample. The final selected threshold was:
+
+```text
+threshold = 0.35
+```
+
+The final prediction rule was:
+
+```text
+if mouth_ratio < 0.35:
+    mouth_state = closed
+else:
+    mouth_state = open
+```
+
+After the threshold was selected, it was applied to the full OpenFace output from `P3-V1-Ravdess`. Only samples predicted as `open` were copied into `silver_dataset_open_mouth`.
+
+#### Output
+
+The resulting silver dataset contains only open-mouth samples and preserves the same multimodal folder structure as the original dataset:
+
+```text
+silver_dataset_open_mouth/
+├── Img/
+│   ├── Positive/
+│   ├── Negative/
+│   └── Neutral/
+│
+├── Spectrogram/
+│   ├── Positive/
+│   ├── Negative/
+│   └── Neutral/
+│
+├── Audio/
+│   ├── Positive/
+│   ├── Negative/
+│   └── Neutral/
+│
+├── silver_mouth_state_dataset_open_only.csv
+└── silver_mouth_state_all_predictions.csv
+```
+
+The script used to create this dataset is:
+
+```text
+silver-DS.py
+```
+
+The script reads the full mouth-ratio result from:
+
+```text
+P3-V1-Ravdess/openface_output/mouth_filter_result.csv
+```
+
+It applies the threshold of `0.35`, selects only rows predicted as `open`, and copies the matching face image, spectrogram, and audio files into the silver dataset folder.
+
+The filename matching is done by replacing the modality tag in the file stem:
+
+```text
+-img-   -> -spec-
+-img-   -> -audio-
+```
+
+For example:
+
+```text
+01-01-03-02-01-01-13-img-2460-82.jpg
+01-01-03-02-01-01-13-spec-2460-82.jpg
+01-01-03-02-01-01-13-audio-2460-82.wav
+```
+
+The full run produced:
+
+```text
+Total rows: 106,696
+Open mouth rows: 66,795
+Closed mouth rows: 39,901
+Threshold: 0.35
+```
+
+The open-only CSV records the files copied into the silver dataset:
+
+```text
+silver_mouth_state_dataset_open_only.csv
+```
+
+The all-predictions CSV records both open and closed mouth-state predictions:
+
+```text
+silver_mouth_state_all_predictions.csv
+```
+
+
+
 
 > Both dataset descriptions above are based on how each dataset is used in the pipeline (folder layout, filename tags, which experiments reference them) rather than on their original creation/labeling process, which I don't have direct knowledge of — please fill in the bracketed notes above with the actual provenance details.
 
@@ -329,3 +458,151 @@ For a **local Ollama** provider, raising `NUM_WORKERS`/`MAX_CONCURRENCY` has lit
 - **Provider errors mentioning a model is "no longer available"** are account/billing/tier issues, not code bugs — confirm by reproducing the same error with a bare, non-async, text-only SDK call outside the pipeline entirely.
 - **Gemini model names and parameter names have changed across generations** during this project (`gemini-2.0-flash` → deprecated; `thinking_budget` → `thinking_level` between the 2.5 and 3.x generations) — always check `client.models.list()` for current availability rather than trusting a model name from documentation or an earlier experiment.
 - **`gpt-5-nano` / `gpt-5.6-luna` force `TEMPERATURE=1.0`/`TOP_P=1.0`** — a custom value throws `400 unsupported_value`.
+
+# Metamorphic Relation
+
+---
+
+## Metamorphic Relation 1
+
+**File:** `MR-experiment_25_gpt5_face[o+c]_no_instruction-pending.py`
+
+The metamorphic relation used in this experiment is:
+
+> Changing only the image brightness should **not change the predicted sentiment**.
+
+Formally,
+
+```
+Prediction(I) == Prediction(Brightness(I, α))
+```
+
+where
+
+- `I` = original image
+- `α` = brightness factor
+
+---
+
+## Brightness Levels
+
+Baseline
+
+```
+1.00
+```
+
+Brightness variants
+
+```
+1.02
+1.12
+1.13
+1.22
+```
+
+The experiment performs inference only on the brightness variants.
+Predictions for **1.00** are loaded from a previously generated baseline run.
+
+---
+
+## Consistency Metric
+
+For each brightness level,
+
+```
+Consistency =
+(Number of identical predictions)
+----------------------------------
+(Number of matched images)
+```
+
+A prediction is considered **consistent** when
+
+```
+Predictionbaseline == Predictionbrightness
+```
+
+Otherwise, it is recorded as a **metamorphic violation**.
+
+---
+
+## Output Files
+
+### Consistency Summary
+
+```
+mr_brightness_consistency_summary.csv
+```
+
+Example
+
+| Brightness | Compared | Matched | Consistency |
+|------------|----------|---------|-------------|
+| 1.02 | 200 | 198 | 0.990 |
+| 1.12 | 200 | 194 | 0.970 |
+| 1.13 | 200 | 191 | 0.955 |
+| 1.22 | 200 | 183 | 0.915 |
+
+---
+
+### Mismatch Details
+
+```
+mr_brightness_mismatches.jsonl
+```
+
+Each record contains
+
+```json
+{
+  "brightness_level": 1.12,
+  "image": "Positive/.../img001.jpg",
+  "baseline_label": "Positive",
+  "level_label": "Neutral"
+}
+```
+
+This file allows manual inspection of all detected metamorphic violations.
+
+---
+
+## Experiment Configuration
+
+Key parameters
+
+```
+BASELINE_LEVEL = 1.00
+
+FOLLOWUP_LEVELS = [
+    1.02,
+    1.12,
+    1.13,
+    1.22
+]
+```
+
+Baseline predictions are loaded from an existing experiment instead of being recomputed.
+
+---
+
+## Metamorphic Relation 2
+
+The metamorphic relation used in this experiment is:
+
+> Changing only the image rotation should **not change the predicted sentiment**.
+
+Formally,
+
+```
+Prediction(I) == Prediction(Rotate(I, α))
+```
+
+where
+
+- `I` = original image
+- `α` = rotation angle
+
+---
+
+**Status:** Pending
