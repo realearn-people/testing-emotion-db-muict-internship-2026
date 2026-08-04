@@ -168,7 +168,7 @@ experiment_<N>_<provider-tag>_<modality>[<dataset-tag>]_<instruction-state>.py
 | 24 | `gemini_facespec[o]_instruction` | gemini | `gemini-3.5-flash-lite` |
 | 26 | `luna_face[o+c]_no_instruction` | openai | `gpt-5.6-luna` |
 
-Note: `gpt-5-nano` and `gpt-5.6-luna` are OpenAI's reasoning-family models — they only accept `TEMPERATURE = 1.0` / `TOP_P = 1.0` (custom values throw a `400 unsupported_value` error). Experiment 26 additionally sets `REASONING_EFFORT = "none"` to minimize reasoning-token cost.
+Note: `gpt-5-nano` only accept `TEMPERATURE = 1.0` / `TOP_P = 1.0` (custom values throw a `400 unsupported_value` error). Experiment 26 additionally sets `REASONING_EFFORT = "none"` to minimize reasoning-token cost.
 
 ---
 
@@ -328,4 +328,4 @@ For a **local Ollama** provider, raising `NUM_WORKERS`/`MAX_CONCURRENCY` has lit
 - **`DATASET_NAME` starting with a hyphen** (e.g. a typo) fails the Slurm script's path-name validation regex silently and immediately, before the job even shows up in `squeue`. Check `bootstrap-<jobid>.out/.err` for `fail()` messages when a job seems to vanish instantly.
 - **Provider errors mentioning a model is "no longer available"** are account/billing/tier issues, not code bugs — confirm by reproducing the same error with a bare, non-async, text-only SDK call outside the pipeline entirely.
 - **Gemini model names and parameter names have changed across generations** during this project (`gemini-2.0-flash` → deprecated; `thinking_budget` → `thinking_level` between the 2.5 and 3.x generations) — always check `client.models.list()` for current availability rather than trusting a model name from documentation or an earlier experiment.
-- **`gpt-5-nano` / `gpt-5.6-luna` force `TEMPERATURE=1.0`/`TOP_P=1.0`** — a custom value throws `400 unsupported_value`.
+- **`gpt-5-nano` force `TEMPERATURE=1.0`/`TOP_P=1.0`** — a custom value throws `400 unsupported_value`.
