@@ -51,11 +51,22 @@ DEST_LABEL="${DEST_LABEL:-results-$(echo "$PROGRAM_BASENAME" | sed -E 's/^experi
 # SMALL VALIDATION HELPERS
 # =============================================================================
 
+# fail(message):
+#   Print "FAIL: <message>" to stderr and stop the whole script (exit 1).
+#   Used everywhere a required condition is not met, so the job stops
+#   immediately with a clear error instead of continuing in a broken state.
 fail() {
     echo "FAIL: $*" >&2
     exit 1
 }
 
+# validate_path_name(label, value):
+#   Check that $value only contains safe characters for use inside a
+#   filesystem path (letters, digits, dot, underscore, dash -- must start
+#   with a letter/digit). If it doesn't match, calls fail() with $label
+#   naming which variable was bad. Protects USER_NAME/PROJECT_NAME/
+#   DATASET_NAME from things like spaces, slashes, or "../" that could
+#   break path building later in the script.
 validate_path_name() {
     local label="$1"
     local value="$2"
@@ -155,6 +166,12 @@ PY
 # READ MODEL SETTINGS FROM PYTHON
 # =============================================================================
 
+# read_python_constant(constant_name):
+#   Ask Python to open the experiment .py file, parse it (without running
+#   it) and print the value of a top-level constant such as PROVIDER or
+#   MODEL. This lets the bash script "read" configuration straight out of
+#   the Python file instead of duplicating those values here, so the two
+#   files can never drift out of sync.
 read_python_constant() {
     local constant_name="$1"
 
@@ -199,6 +216,12 @@ printf '%s\n' \
 
 OLLAMA_PID=""
 
+# cleanup():
+#   Runs automatically on EXIT/INT/TERM (see the "trap cleanup ..." line
+#   below). If this job started a local Ollama server ($OLLAMA_PID is
+#   set), it stops that process before the script exits, so no orphaned
+#   Ollama server is left running on the compute node -- whether the job
+#   finished normally, failed, or was cancelled.
 cleanup() {
     status=$?
     trap - EXIT INT TERM

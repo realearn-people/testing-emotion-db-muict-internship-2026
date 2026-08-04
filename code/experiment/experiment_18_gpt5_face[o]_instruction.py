@@ -90,6 +90,15 @@ USER_MESSAGE = (
 )
 
 def resolve_dataset_paths() -> tuple[Path, Path]:
+    """Work out where the face-image dataset lives for this run.
+
+    Reads the DATASET_ROOT environment variable (provided by Slurm) and
+    appends FACE_SUBDIRECTORY to find the folder containing the labeled
+    face images.
+
+    Returns:
+        A (dataset_root, face_dir) tuple of resolved absolute paths.
+    """
     dataset_root = Path(
         required_environment("DATASET_ROOT")
     ).expanduser().resolve()
@@ -127,6 +136,19 @@ def environment_bool(name: str, default: bool = False) -> bool:
 
 
 def create_config() -> PipelineConfig:
+    """Build the PipelineConfig object that drives this experiment.
+
+    Reads Slurm-provided environment variables (RUN_DIR, REDIS_*,
+    RESUME, ...), resolves the dataset paths, and combines them with
+    the constants defined at the top of this file (PROVIDER, MODEL,
+    SYSTEM_PROMPT, TEMPERATURE, etc.) into one PipelineConfig. Also
+    records an "immutable_settings" snapshot (including a hash of the
+    system prompt) so every run can be traced back to exactly what
+    configuration produced it.
+
+    Returns:
+        A fully populated PipelineConfig, ready to be used by run().
+    """
     run_dir = Path(
         required_environment("RUN_DIR")
     ).expanduser().resolve()
@@ -193,6 +215,26 @@ def create_config() -> PipelineConfig:
 
 
 async def run() -> int:
+    """Run this experiment end to end.
+
+    Builds the config and output folders, checks the dataset folders
+    exist, builds (or resumes) the list of jobs to run, sends any
+    pending jobs through the worker pipeline, and writes the final
+    CSV/JSON reports. Also records the run's outcome (validated,
+    completed, incomplete, or failed) in the run metadata.
+
+    Returns:
+        0 if the run finished (or DRY_RUN validated successfully), or
+        2 if some jobs in the manifest are still incomplete after this
+        attempt.
+
+    Raises:
+        FileNotFoundError: If the dataset root or a required
+            face/spectrogram sub-folder does not exist.
+        Exception: Any error raised while building the manifest or
+            running jobs is recorded as a "failed" run before being
+            re-raised to the caller.
+    """
     config = create_config()
     config.paths.create()
     setup_logging(config.paths.log_dir)
@@ -310,6 +352,17 @@ async def run() -> int:
 
 
 def main() -> int:
+    """Command-line entry point.
+
+    Runs the async run() coroutine and converts its result (or any
+    exception raised along the way) into a process exit code, so this
+    script can be used directly as a Slurm job step.
+
+    Returns:
+        0 on success, 2 if the run finished but some jobs are still
+        incomplete, 130 if interrupted with Ctrl+C, or 1 if an
+        unexpected error occurred.
+    """
     try:
         return asyncio.run(run())
     except KeyboardInterrupt:
