@@ -52,13 +52,14 @@ from lab_pipeline.providers import ProviderFactory
 # =============================================================================
 
 FACE_SUBDIRECTORY = "Img"
+# SPECTROGRAM_SUBDIRECTORY = "Spectrogram" # face-only doesn't use spectrogram
 
 # Model
 PROVIDER = "openai"
-MODEL = "gpt-5-nano"
+MODEL = "gpt-5-nano" 
 TEMPERATURE = 1.0
 TOP_P = 1.0
-NUM_CTX = 4096
+NUM_CTX = 4096  
 
 # Processing
 NUM_RUNS = 3
@@ -73,14 +74,16 @@ RETRY_DELAY = 2.0
 # Dataset
 TEST_SIZE = 0.20
 SEED = 42
-MAX_SAMPLES = 10
+MAX_SAMPLES = 0
 
 # Output interpretation
 BERT_ENABLED = False
 BERT_MODEL = "typeform/distilbert-base-uncased-mnli"
 BERT_THRESHOLD = 0.38
 BERT_MIN_MARGIN = 0.03
-
+# Dataset-pairing safety # comment because face-only doesn't require image pairing
+# STRICT_PAIRS = False
+# ALLOW_POSITIONAL_FALLBACK = False
 # Set True only for validation without model execution.
 DRY_RUN = False
 
@@ -233,7 +236,7 @@ def create_config(level: float, face_dir: Path, level_run_dir: Path) -> Pipeline
     dataset_root = resolve_dataset_root()
     resume = environment_bool("RESUME")
 
-    experiment_name = f"9.gpt5-face[o+c]-no-instruction-MR-b{level:.2f}"
+    experiment_name = f"25.gpt5-face[o+c]-no-instruction-MR-b{level:.2f}"
 
     immutable = {
         "experiment": experiment_name,
@@ -401,6 +404,8 @@ async def run_level(level: float) -> Tuple[Dict[str, str], int]:
                 threshold=config.bert_threshold,
                 min_margin=config.bert_min_margin,
             )
+            # Dependency injection: the pipeline receives, rather than creates,
+            # the provider, Redis queue, checkpoint repository, and interpreter.
             pipeline = WorkerPipeline(
                 config=config,
                 queue=queue,
