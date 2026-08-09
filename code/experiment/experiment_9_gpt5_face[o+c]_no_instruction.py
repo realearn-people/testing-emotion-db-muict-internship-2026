@@ -53,8 +53,14 @@ TEST_SIZE = 0.20
 SEED = 42
 MAX_SAMPLES = 0
 
-# Output interpretation
+# Output interpretation (BERT)
+# The following BERT-based settings are kept for compatibility with the
+# broader lab pipeline (used by other experiments such as spectrogram or
+# combined-modality runs). For this face-only experiment the BERT
+# interpretation path is not used (BERT_ENABLED=False) but the settings
+# remain here so the same config shape is preserved across experiments.
 BERT_ENABLED = False
+# Unused variable - only read if BERT_ENABLED is True
 BERT_MODEL = "typeform/distilbert-base-uncased-mnli"
 BERT_THRESHOLD = 0.38
 BERT_MIN_MARGIN = 0.03
@@ -176,6 +182,7 @@ def create_config() -> PipelineConfig:
         ),
         redis_password=os.environ.get("REDIS_PASSWORD"),
         bert_enabled=BERT_ENABLED,
+        # Unused kwargs - never read since bert_enabled is False
         bert_model=BERT_MODEL,
         bert_threshold=BERT_THRESHOLD,
         bert_min_margin=BERT_MIN_MARGIN,
@@ -264,8 +271,14 @@ async def run() -> int:
                 semaphore=semaphore,
             )
             queue = RedisJobQueue(config)
+            # NOTE: BERT-based output interpretation is present for
+            # compatibility with other experiments. For this face-only
+            # run the BERT path is effectively unused (see BERT_ENABLED
+            # above). We still instantiate `OutputInterpreter` so the
+            # pipeline API remains consistent across experiments.
             interpreter = OutputInterpreter(
                 bert_enabled=config.bert_enabled,
+                # Unused kwargs - only read inside OutputInterpreter if bert_enabled is True
                 bert_model=config.bert_model,
                 threshold=config.bert_threshold,
                 min_margin=config.bert_min_margin,

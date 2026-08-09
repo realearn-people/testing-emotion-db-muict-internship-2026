@@ -55,6 +55,7 @@ MAX_SAMPLES = 0
 
 # Output interpretation
 BERT_ENABLED = False
+# Unused variable - only read if BERT_ENABLED is True
 BERT_MODEL = "typeform/distilbert-base-uncased-mnli"
 BERT_THRESHOLD = 0.38
 BERT_MIN_MARGIN = 0.03
@@ -176,6 +177,7 @@ def create_config() -> PipelineConfig:
         ),
         redis_password=os.environ.get("REDIS_PASSWORD"),
         bert_enabled=BERT_ENABLED,
+        # Unused kwargs - never read since bert_enabled is False
         bert_model=BERT_MODEL,
         bert_threshold=BERT_THRESHOLD,
         bert_min_margin=BERT_MIN_MARGIN,
@@ -265,6 +267,7 @@ async def run() -> int:
             queue = RedisJobQueue(config)
             interpreter = OutputInterpreter(
                 bert_enabled=config.bert_enabled,
+                # Unused kwargs - only read inside OutputInterpreter if bert_enabled is True
                 bert_model=config.bert_model,
                 threshold=config.bert_threshold,
                 min_margin=config.bert_min_margin,
