@@ -90,6 +90,8 @@ closed = 50
 
 Each image in this 100-image sample was manually labeled as either `open` or `closed` by visually inspecting the mouth state.
 
+OpenFace Version: OpenFace_2.2.0
+
 OpenFace was then used to extract facial landmarks from the sampled images. The mouth state was estimated using the outer-lip landmark ratio:
 
 ```text
